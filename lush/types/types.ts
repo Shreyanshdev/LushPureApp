@@ -3,9 +3,9 @@
 // The product data structure from your database
 export interface Product {
     id: string;
-    _id?: string; // Add _id as an optional property
+    _id?: string;
     name: string;
-    price: number; // Changed to number
+    price: number;
     image: string;
   }
   

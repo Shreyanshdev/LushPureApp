@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Location from 'expo-location';
 import { Address } from '../../types/types';
 import { addAddress, getAddresses, updateAddress, deleteAddress } from '../../src/config/api';
 
@@ -39,7 +40,9 @@ const AddressScreen = () => {
       }
 
       const response = await getAddresses();
+      console.log("API Response:", response.data);
       setAddresses(response.data);
+      console.log("Addresses State:", addresses);
     } catch (error) {
       console.error('Error fetching addresses:', error);
       Alert.alert('Error', 'Failed to load addresses.');
@@ -126,6 +129,28 @@ const AddressScreen = () => {
     setEditingAddressId(address._id);
   };
 
+  const handleUseCurrentLocation = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission denied', 'Permission to access location was denied');
+      return;
+    }
+
+    let location = await Location.getCurrentPositionAsync({});
+    let reverseGeocode = await Location.reverseGeocodeAsync(location.coords);
+    if (reverseGeocode.length > 0) {
+      const geo = reverseGeocode[0];
+      setNewAddress({
+        ...newAddress,
+        addressLine1: `${geo.streetNumber} ${geo.street}`,
+        addressLine2: geo.name,
+        city: geo.city,
+        state: geo.region,
+        zipCode: geo.postalCode,
+      });
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
@@ -146,6 +171,10 @@ const AddressScreen = () => {
       <ScrollView style={styles.container}>
         <Text style={styles.sectionTitle}>Add New Address</Text>
         <View style={styles.formContainer}>
+          <TouchableOpacity style={styles.locationButton} onPress={handleUseCurrentLocation}>
+            <MaterialCommunityIcons name="map-marker-outline" size={20} color="#fff" />
+            <Text style={styles.locationButtonText}>Use Current Location</Text>
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             placeholder="Address Line 1"
@@ -276,6 +305,21 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+  },
+  locationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#22c55e',
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    marginBottom: 15,
+  },
+  locationButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginLeft: 8,
   },
   input: {
     borderWidth: 1,

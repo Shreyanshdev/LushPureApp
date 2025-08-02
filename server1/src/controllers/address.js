@@ -22,7 +22,7 @@ export const addAddress = async (req, reply) => {
 
 export const getAddresses = async (req, reply) => {
     try {
-        const { userId } = req.user; // Assuming userId is available from verifyToken
+        const { userId } = req.query; // Assuming userId is available from query
         const addresses = await Address.find({ userId });
         return reply.status(200).send(addresses);
     } catch (error) {

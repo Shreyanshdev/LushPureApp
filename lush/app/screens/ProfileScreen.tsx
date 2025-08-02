@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,34 +8,25 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Modal,
+  FlatList,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "expo-router";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { getProfile, updateProfile, logout as logoutApi } from "../../src/config/api";
+import { getProfile, updateProfile, logout as logoutApi, getAddresses, updateAddress } from "../../src/config/api";
+import { Address } from "../../types/types";
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
 
   // State for user data
-  const [profile, setProfile] = useState<{
-    name: string;
-    email?: string;
-    phone?: string;
-    address?: string;
-    isActivated: boolean;
-    subscription: {
-      id: string;
-      status: string;
-      milkType: string;
-      slot: string;
-      quantity: number;
-      startDate: string;
-      endDate: string;
-    } | null;
-  } | null>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [defaultAddress, setDefaultAddress] = useState<Address | null>(null);
+  const [isAddressModalVisible, setAddressModalVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -43,33 +34,46 @@ const ProfileScreen = () => {
   // Form state for edits
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
 
-  // Fetch profile on mount
-  useEffect(() => {
-    fetchUserProfile();
-  }, []);
-
-  async function fetchUserProfile() {
+  const fetchUserProfile = useCallback(async () => {
     try {
-      setLoading(true);
       const resp = await getProfile();
       if (resp?.data) {
         const data = resp.data;
         setProfile(data);
         setName(data.name || "");
         setEmail(data.email || "");
-        setAddress(data.address || "");
       } else {
         Alert.alert("Error", "Failed to fetch profile data");
       }
     } catch (error) {
       console.error("Fetch profile error:", error);
       Alert.alert("Error", "Failed to fetch profile data");
-    } finally {
-      setLoading(false);
     }
-  }
+  }, []);
+
+  const fetchAddresses = useCallback(async () => {
+    try {
+      const resp = await getAddresses();
+      console.log("Fetched addresses:", resp);
+      if (resp?.data) {
+        setAddresses(resp.data);
+        const defaultAddr = resp.data.find((addr: Address) => addr.isDefault);
+        if (defaultAddr) {
+          setDefaultAddress(defaultAddr);
+        }
+      }
+    } catch (error) {
+      console.error("Fetch addresses error:", error);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      Promise.all([fetchUserProfile(), fetchAddresses()]).finally(() => setLoading(false));
+    }, [fetchUserProfile, fetchAddresses])
+  );
 
   // Save updated profile
   async function saveProfile() {
@@ -80,7 +84,7 @@ const ProfileScreen = () => {
 
     try {
       setLoading(true);
-      const resp = await updateProfile({ name, email, address });
+      const resp = await updateProfile({ name, email });
 
       if (resp.status === 200 || resp.status === 201) {
         Alert.alert("Success", "Profile updated successfully");
@@ -94,6 +98,25 @@ const ProfileScreen = () => {
       Alert.alert("Error", "Failed to update profile");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleSetDefaultAddress(address: Address) {
+    try {
+      // Set the selected address as default
+      await updateAddress(address._id, { ...address, isDefault: true });
+
+      // Unset the old default address if it exists
+      if (defaultAddress && defaultAddress._id !== address._id) {
+        await updateAddress(defaultAddress._id, { ...defaultAddress, isDefault: false });
+      }
+
+      setDefaultAddress(address);
+      setAddressModalVisible(false);
+      Alert.alert("Success", "Default address updated successfully");
+    } catch (error) {
+      console.error("Set default address error:", error);
+      Alert.alert("Error", "Failed to update default address");
     }
   }
 
@@ -164,20 +187,6 @@ const ProfileScreen = () => {
             <Text style={styles.valueText}>{profile?.phone || "N/A"}</Text>
           </View>
 
-          {/* Address */}
-          <View style={styles.inputRow}>
-            <Text style={styles.label}>Address:</Text>
-            <TextInput
-              style={[styles.input, !isEditing && styles.disabledInput]}
-              value={address || ""}
-              onChangeText={setAddress}
-              editable={isEditing}
-              placeholder="Enter your delivery address"
-              multiline
-              returnKeyType="done"
-            />
-          </View>
-
           {!isEditing ? (
             <TouchableOpacity style={styles.editBtn} onPress={() => setIsEditing(true)}>
               <Text style={styles.editBtnText}>Edit Profile</Text>
@@ -194,7 +203,6 @@ const ProfileScreen = () => {
                   // Reset inputs to original profile values if cancelled
                   setName(profile?.name || "");
                   setEmail(profile?.email || "");
-                  setAddress(profile?.address || "");
                 }}
               >
                 <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -245,7 +253,20 @@ const ProfileScreen = () => {
         {/* Delivery Address Section */}
         <View style={styles.profileSection}>
           <Text style={styles.sectionTitle}>Delivery Address</Text>
-          <Text style={styles.valueText}>{profile?.address || "No delivery address set."}</Text>
+          {defaultAddress ? (
+            <Text style={styles.valueText}>
+              {defaultAddress.addressLine1}, {defaultAddress.city}, {defaultAddress.state} - {defaultAddress.zipCode}
+            </Text>
+          ) : (
+            <Text style={styles.valueText}>No default address set.</Text>
+          )}
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setAddressModalVisible(true)}
+          >
+            <Text style={styles.actionButtonText}>Change Default Address</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.actionButton}
@@ -260,6 +281,40 @@ const ProfileScreen = () => {
           <Text style={styles.logoutButtonText}>Logout</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Address Selection Modal */}
+      <Modal
+        visible={isAddressModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setAddressModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select Default Address</Text>
+            <FlatList
+              data={addresses}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.addressOption}
+                  onPress={() => handleSetDefaultAddress(item)}
+                >
+                  <Text style={styles.addressText}>
+                    {item.addressLine1}, {item.city}, {item.state} - {item.zipCode}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setAddressModalVisible(false)}
+            >
+              <Text style={styles.closeButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -408,6 +463,52 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontWeight: "bold",
     fontSize: 18,
+  },
+
+  modalContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+  },
+
+  modalContent: {
+    backgroundColor: "#fff",
+    borderRadius: 10,
+    padding: 20,
+    width: "80%",
+    maxHeight: "80%",
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+
+  addressOption: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+
+  addressText: {
+    fontSize: 16,
+  },
+
+  closeButton: {
+    marginTop: 15,
+    backgroundColor: "#22c55e",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  closeButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
   },
 });
 

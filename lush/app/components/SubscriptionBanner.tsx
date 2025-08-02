@@ -28,7 +28,8 @@ const SubscriptionBanner: React.FC = () => {
           Buy a subscription and get real milk delivered directly from buffalo/cow to your home.
         </Text>
         <View style={styles.ctaContainer}>
-          <TouchableOpacity style={styles.buyButton}>
+          <TouchableOpacity style={styles.buyButton}
+          onPress={() => navigation.navigate('screens/SubscriptionScreen')}>
             <Text style={styles.buyButtonText}>Buy Subscription</Text>
           </TouchableOpacity>
         </View>

@@ -1,6 +1,4 @@
-// src/components/TopBar.tsx
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,61 +7,83 @@ import {
   Modal,
   TextInput,
   Dimensions,
+  FlatList,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useNavigation } from 'expo-router';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
-import { NativeStackNavigationProp } from 'react-native-screens/lib/typescript/native-stack/types';
 import * as Location from 'expo-location';
+import { getAddresses, updateAddress } from '../../src/config/api';
+import { Address } from '../../types/types';
+
 type RootStackParamList = {
   'screens/ProfileScreen': undefined;
 };
-type NavigationProps = NativeStackNavigationProp<RootStackParamList>;
+type NavigationProps = any;
 
 const { height: screenHeight } = Dimensions.get('window');
-
-// Removed React.FC for cleaner component definition
-
 
 const TopBar = () => {
   const navigation = useNavigation<NavigationProps>();
   const [isModalVisible, setModalVisible] = useState(false);
   const [currentLocation, setCurrentLocation] = useState('Fetching location...');
-  const [savedAddress, setSavedAddress] = useState('');
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [defaultAddress, setDefaultAddress] = useState<Address | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setCurrentLocation('Permission to access location was denied');
-        return;
+  const fetchAddresses = useCallback(async () => {
+    try {
+      const resp = await getAddresses();
+      if (resp?.data) {
+        setAddresses(resp.data);
+        const defaultAddr = resp.data.find((addr: Address) => addr.isDefault);
+        if (defaultAddr) {
+          setDefaultAddress(defaultAddr);
+          setCurrentLocation(`${defaultAddr.addressLine1}, ${defaultAddr.city}`);
+        }
       }
-
-      let location = await Location.getCurrentPositionAsync({});
-      const { latitude, longitude } = location.coords;
-      let address = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (address.length > 0) {
-        const { street, city, region } = address[0];
-        setCurrentLocation(`${street}, ${city}, ${region}`);
-      }
-    })();
+    } catch (error) {
+      console.error("Fetch addresses error:", error);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchAddresses();
+    }, [fetchAddresses])
+  );
 
   const toggleModal = () => {
     setModalVisible(!isModalVisible);
   };
 
-  const handleUseCurrentLocation = () => {
-    setCurrentLocation('Your Current Location');
+  const handleUseCurrentLocation = async () => {
+    let { status } = await Location.requestForegroundPermissionsAsync();
+    if (status !== 'granted') {
+      setCurrentLocation('Permission to access location was denied');
+      return;
+    }
+
+    let location = await Location.getCurrentPositionAsync({});
+    const { latitude, longitude } = location.coords;
+    let address = await Location.reverseGeocodeAsync({ latitude, longitude });
+    if (address.length > 0) {
+      const { street, city, region } = address[0];
+      setCurrentLocation(`${street}, ${city}, ${region}`);
+    }
     setModalVisible(false);
   };
 
-  const handleSelectAddress = () => {
-    if (savedAddress.trim() !== '') {
-      setCurrentLocation(savedAddress.trim());
+  const handleSelectAddress = async (address: Address) => {
+    try {
+      await updateAddress(address._id, { ...address, isDefault: true });
+      if (defaultAddress && defaultAddress._id !== address._id) {
+        await updateAddress(defaultAddress._id, { ...defaultAddress, isDefault: false });
+      }
+      setDefaultAddress(address);
+      setCurrentLocation(`${address.addressLine1}, ${address.city}`);
       setModalVisible(false);
-    } else {
-      alert('Please enter a saved address or use current location.');
+    } catch (error) {
+      console.error("Set default address error:", error);
     }
   };
 
@@ -99,20 +119,20 @@ const TopBar = () => {
               <Text style={styles.modalOptionText}>Use Current Location</Text>
             </TouchableOpacity>
 
-            <View style={styles.savedAddressContainer}>
-              <Feather name="home" size={20} color="#6b7280" style={styles.inputIcon} />
-              <TextInput
-                style={styles.savedAddressInput}
-                placeholder="Enter Saved Address"
-                placeholderTextColor="#9ca3af"
-                value={savedAddress}
-                onChangeText={setSavedAddress}
-              />
-            </View>
-
-            <TouchableOpacity style={styles.modalOkButton} onPress={handleSelectAddress}>
-              <Text style={styles.modalOkButtonText}>OK</Text>
-            </TouchableOpacity>
+            <FlatList
+              data={addresses}
+              keyExtractor={(item) => item._id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.addressOption}
+                  onPress={() => handleSelectAddress(item)}
+                >
+                  <Text style={styles.addressText}>
+                    {item.addressLine1}, {item.city}, {item.state} - {item.zipCode}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            />
           </View>
         </BlurView>
       </Modal>
@@ -194,42 +214,15 @@ const styles = StyleSheet.create({
     color: '#10b981',
     fontWeight: 'bold',
   },
-  savedAddressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    paddingHorizontal: 15,
-    marginBottom: 20,
+  addressOption: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
     width: '100%',
-    backgroundColor: '#f9fafb',
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  savedAddressInput: {
-    flex: 1,
-    height: 50,
+  addressText: {
     fontSize: 16,
-    color: '#333',
-  },
-  modalOkButton: {
-    backgroundColor: '#22c55e',
-    paddingVertical: 15,
-    borderRadius: 10,
-    width: '100%',
-    alignItems: 'center',
-    shadowColor: '#22c55e',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-  },
-  modalOkButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 

@@ -27,7 +27,14 @@ api.interceptors.request.use(
 
 // Address Routes
 export const addAddress = (addressData: any) => api.post('/addresses', addressData);
-export const getAddresses = () => api.get('/addresses');
+export const getAddresses = async () => {
+  const userId = await AsyncStorage.getItem('userId');
+  return api.get('/addresses', {
+    params: {
+      userId,
+    },
+  });
+};
 export const updateAddress = (addressId: string, addressData: any) => api.put(`/addresses/${addressId}`, addressData);
 export const deleteAddress = (addressId: string) => api.delete(`/addresses/${addressId}`);
 

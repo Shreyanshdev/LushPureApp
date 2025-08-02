@@ -36,6 +36,7 @@ export const admin = new AdminJS({
         {resource:Models.Order},
         {resource:Models.Counter},
         {resource:Models.Subscription},
+        {resource:Models.Address},
     ],
     branding:{
         companyName: "Lush & Pure",

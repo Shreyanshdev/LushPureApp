@@ -22,9 +22,10 @@ const customerSchema = new mongoose.Schema({
         required: true,
         unique: true,
     },
-    address: {
-        type: String,
-    },
+    address: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Address',
+    }],
     liveLocation: {
         latitute: { type: Number },
         longitude: { type: Number },
